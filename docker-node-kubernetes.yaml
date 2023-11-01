@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-nodejs-demo  # Nombre descriptivo para el despliegue
+  namespace: default
+spec:
+  replicas: 1  # Un solo pod en este caso
+  selector:
+    matchLabels:
+      todo: web
+  template:
+    metadata:
+      labels:
+        todo: web
+    spec:
+      containers:
+      - name: todo-site
+        image: DOCKER_USERNAME/REPO_NAME  # Imagen de la aplicación
+        imagePullPolicy: Always  # Siempre obtener la última imagen disponible
+        env:
+        - name: DATABASE_URL
+          value: "mongodb://mongo-service:27017/mydb"  # Variable de entorno para configurar la base de datos
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-secrets
+              key: api-key  # Referencia a un secreto para almacenar información confidencial
+        livenessProbe:
+          httpGet:
+            path: /health  # Comprobación de salud de la aplicación
+            port: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-entrypoint  # Nombre descriptivo para el servicio
+  namespace: default
+spec:
+  type: NodePort  # Tipo de servicio
+  selector:
+    todo: web
+  ports:
+  - port: 3000  # Puerto en el que el servicio escucha
+    targetPort: 3000  # Puerto al que el tráfico se redirige
+    nodePort: 30001  # Puerto del nodo en el que se expone la aplicación
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-secrets  # Nombre descriptivo para el secreto
+type: Opaque  # Tipo de secreto
+data:
+  api-key: BASE64_ENCODED_API_KEY  # Información confidencial en formato codificado
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-service  # Nombre descriptivo para el servicio de MongoDB
+  namespace: default
+spec:
+  ports:
+  - port: 27017  # Puerto de MongoDB
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb  # Nombre descriptivo para el conjunto de estado de MongoDB
+  namespace: default
+spec:
+  serviceName: "mongo-service"
+  replicas: 1  # Un solo pod para MongoDB
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:latest  # Imagen de MongoDB
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: mongo-data
+          mountPath: /data/db  # Uso de volúmenes para almacenar datos persistentes
+  volumeClaimTemplates:
+  - metadata:
+      name: mongo-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
